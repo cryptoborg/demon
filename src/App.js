@@ -5,6 +5,8 @@ import './css/demo.css'
 import './css/normalize.css'
 import './css/webflow.css'
 
+const CONTEST_CONTRACT_ADDRESS = "0xaba7902442c5739c6f0c182691d48d63d06a212e";
+
 class WagerForm  extends Component {
     constructor(props) {
         super(props)
@@ -13,11 +15,15 @@ class WagerForm  extends Component {
             username: '',
             amountOfEthWager: '',
             account0: '',
-            account0Balance: 0
+            account0Balance: 0,
+            ContractInstance: null
         }
 
         this.handleInputChange = this.handleInputChange.bind(this);
-        this.handleSubmit = this.handleSubmit.bind(this);
+        this.handleJoinContest = this.handleJoinContest.bind(this);
+        this.handleLeaveContest = this.handleLeaveContest.bind(this);
+        this.handleClaimRefund = this.handleClaimRefund.bind(this);
+        this.refreshBalance = this.refreshBalance.bind(this);
     }
 
     componentWillMount() {
@@ -38,17 +44,36 @@ class WagerForm  extends Component {
         })
     }
 
-    getBalance (address) {
+    getBalance(address) {
         return new Promise (function (resolve, reject) {
-          window.web3.eth.getBalance(address, function (error, result) {
-            if (error) {
-              reject(error);
-            } else {
-              resolve(result);
-              }
-          })
+            window.web3.eth.getBalance(address, function (error, result) {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            })
         })
-      }
+    }
+
+    getGasPrice() {
+        return new Promise (function (resolve, reject) {
+            window.web3.eth.getGasPrice(function (error, result) {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            })
+        })
+    }
+
+    refreshBalance() {
+        this.getBalance(this.state.account0).then((result) => {
+            var balance = this.state.web3.utils.fromWei(result.toString(), 'ether')
+            this.setState({ account0Balance: balance })
+        });
+    }
 
     instantiateContract() {
         /*
@@ -58,7 +83,10 @@ class WagerForm  extends Component {
          * state management library, but for convenience I've placed them here.
          */
 
-         /*
+        const ContestContract = window.web3.eth.contract([{"constant":true,"inputs":[{"name":"","type":"uint256"}],"name":"contestantsList","outputs":[{"name":"","type":"address"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"winnersCount","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"contestantsInfo","outputs":[{"name":"isInContest","type":"bool"},{"name":"initialBetAmount","type":"uint256"},{"name":"contestantIndex","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"startTime","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"winnerPercentage","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"deposited","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"inputs":[{"name":"_startTime","type":"uint256"},{"name":"_winnerPercentage","type":"uint256"}],"payable":true,"stateMutability":"payable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"name":"_contestant","type":"address"},{"indexed":false,"name":"_wagerAmount","type":"uint256"}],"name":"JoinContest","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"name":"_contestant","type":"address"}],"name":"LeaveContest","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"beneficiary","type":"address"},{"indexed":false,"name":"weiAmount","type":"uint256"}],"name":"Refunded","type":"event"},{"constant":true,"inputs":[{"name":"_contestant","type":"address"}],"name":"isInContest","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"joinContest","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":false,"inputs":[],"name":"leaveContest","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"claimRefund","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"calculateReward","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}])
+        this.setState({ ContractInstance: ContestContract.at(CONTEST_CONTRACT_ADDRESS) })
+
+            /*
         const contract = require('truffle-contract')
         const simpleStorage = contract(SimpleStorageContract)
         simpleStorage.setProvider(this.state.web3.currentProvider)
@@ -73,9 +101,44 @@ class WagerForm  extends Component {
             this.getBalance(accounts[0]).then((result) => {
                 
                 var balance = this.state.web3.utils.fromWei(result.toString(), 'ether')
-                //alert('getBalance ' + balance);
                 this.setState({ account0Balance: balance })
             });
+
+            this.setState({ contestPricePool: 0 })
+
+            var joinContestEvent = this.state.ContractInstance.JoinContest({fromBlock:'latest'});
+            var leaveContestEvent = this.state.ContractInstance.LeaveContest({fromBlock:'latest'});
+            var refundedEvent = this.state.ContractInstance.Refunded({fromBlock:'latest'});
+
+            var thisObj = this;
+            // Watch for join and leave contest events
+            joinContestEvent.watch(function(error, result){
+                if (error) {
+                    alert('Error: ' + error)
+                } else {
+                    alert('Join game request confirmed!')
+                    thisObj.refreshBalance()
+                }
+            });
+    
+            leaveContestEvent.watch(function(error, result){
+                if (error) {
+                    alert('Error: ' + error)
+                } else {
+                    alert('Leave game request confirmed!')
+                    thisObj.refreshBalance()
+                }
+            });
+
+            refundedEvent.watch(function(error, result){
+                if (error) {
+                    alert('Error: ' + error)
+                } else {
+                    alert('Done refunded!')
+                    thisObj.refreshBalance()
+                }
+            });
+
             /*
             simpleStorage.deployed().then((instance) => {
                 simpleStorageInstance = instance
@@ -103,8 +166,49 @@ class WagerForm  extends Component {
         });
     }
 
-    handleSubmit(event) {
+    handleJoinContest(event) {
         event.preventDefault();
+        if (this.state.amountOfEthWager == '')
+        {
+            alert('Please fill in Wager Amount')
+            return
+        }
+
+        /*
+        var gasPrice = this.state.web3.eth.gasPrice;
+        this.getGasPrice().then((result) => {
+            var balance = this.state.web3.utils.fromWei(result.toString(), 'ether')
+            alert(balance)
+        });
+        */
+
+        this.state.ContractInstance.joinContest({
+            gas: 300000,
+            from: this.state.account0,
+            value: this.state.web3.utils.toWei(this.state.amountOfEthWager, 'ether')
+         }, (err, result) => {
+            alert('Joined game!!')
+         })
+    }
+
+    handleLeaveContest(event) {
+        event.preventDefault();
+        this.state.ContractInstance.leaveContest({
+            gas: 300000,
+            from: this.state.account0
+         }, (err, result) => {
+            alert('Left game!!')
+         })
+    }
+
+    handleClaimRefund(event) {
+        event.preventDefault();
+        this.state.ContractInstance.claimRefund({
+            gas: 300000,
+            from: this.state.account0
+         }, (err, result) => {
+            alert('Claimed Refund!!')
+         })
     }
 
     render() {
@@ -122,7 +226,7 @@ class WagerForm  extends Component {
             <div class="timertext_div w-clearfix">
                 <div class="address">{this.state.account0Balance} ETH</div>
             </div>
-            <form id="contest-form" name="contest-form" class="join-form" onSubmit={this.handleSubmit}>
+            <form id="contest-form" name="contest-form" class="join-form" onSubmit={this.handleJoinContest}>
                 <label for="name">Username</label>
                 <input type="text" class="w-input" maxlength="256" name="username" placeholder="Enter username. For leaderboard display" id="username"
                     value={this.state.username}
@@ -131,9 +235,65 @@ class WagerForm  extends Component {
                 <input type="number" class="w-input" maxlength="256" name="amountOfEthWager" id="ethwager" required=""
                     value={this.state.amountOfEthWager}
                     onChange={this.handleInputChange} />
-                <input type="submit" value="Submit" class="w-button" />
+                <input type="submit" value="Join Contest" class="w-button" />
+            </form>
+            <form id="contest-leave-form" name="contest-leave-form" class="join-form" onSubmit={this.handleLeaveContest}>
+                <input type="submit" value="Leave Contest" class="w-button" />
+            </form>
+            <form id="contest-claim-refund-form" name="contest-claim-refund-form" class="join-form" onSubmit={this.handleClaimRefund}>
+                <input type="submit" value="Claim Refund" class="w-button" />
             </form>
             </div>
+        );
+    }
+}
+
+class ContestInfoForm  extends Component {
+    constructor(props) {
+        super(props)
+        this.state = {
+            web3: null,
+            contestPricePool : 0
+        }
+    }
+
+    componentWillMount() {
+        // Get network provider and web3 instance.
+        // See utils/getWeb3 for more info.
+
+        getWeb3
+        .then(results => {
+            this.setState({
+                web3: results.web3
+            })
+
+            this.getContestPricePool().then((result) => {
+                
+                var balance = this.state.web3.utils.fromWei(result.toString(), 'ether')
+                this.setState({ contestPricePool: balance })
+            });
+        })
+        .catch(() => {
+            alert('Error finding web3.')
+        })
+    }
+
+    getContestPricePool() {
+        return new Promise (function (resolve, reject) {
+
+            window.web3.eth.getBalance(CONTEST_CONTRACT_ADDRESS, function (error, result) {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            })
+        })
+    }
+
+    render() {
+        return(
+            <div class="info_text">{this.state.contestPricePool} ETH</div>
         );
     }
 }
@@ -182,14 +342,14 @@ class App extends Component {
                         <div class="info">PLAYERS</div>
                     </div>
                     <div class="game_column w-col w-col-3">
-                        <div class="info_text">2,478</div>
+                        <div class="info_text">-----</div>
                     </div>
                     <div class="game_column w-col w-col-3">
                         <div class="info_icon"></div>
                         <div class="info">RULE</div>
                     </div>
                     <div class="game_column w-col w-col-3">
-                        <div class="info_text">Top 20% Players</div>
+                        <div class="info_text">Top 50% Players</div>
                     </div>
                     </div>
                     <div class="game_row w-row">
@@ -198,7 +358,7 @@ class App extends Component {
                         <div class="info">PRIZE POOL</div>
                     </div>
                     <div class="game_column w-col w-col-3">
-                        <div class="info_text">201.3 ETH</div>
+                        <ContestInfoForm />
                     </div>
                     <div class="game_column w-col w-col-3">
                         <div class="info_icon"></div>
