@@ -6,6 +6,7 @@ import './css/normalize.css'
 import './css/webflow.css'
 
 const CONTEST_CONTRACT_ADDRESS = "0x9a73c3E8c3687A01bE6154069F24f39616cA47Aa";
+const CONTEST_ABI = [{"constant":true,"inputs":[{"name":"_contestant","type":"address"}],"name":"isInContest","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"joinContest","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"uint256"}],"name":"contestantsList","outputs":[{"name":"","type":"address"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"winnersCount","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"contestantsInfo","outputs":[{"name":"isInContest","type":"bool"},{"name":"initialBetAmount","type":"uint256"},{"name":"contestantIndex","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"startTime","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"winnerPercentage","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"claimRefund","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"leaveContest","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"deposited","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"inputs":[{"name":"_startTime","type":"uint256"},{"name":"_winnerPercentage","type":"uint256"}],"payable":true,"stateMutability":"payable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"name":"_contestant","type":"address"},{"indexed":false,"name":"_wagerAmount","type":"uint256"}],"name":"JoinContest","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"name":"_contestant","type":"address"}],"name":"LeaveContest","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"beneficiary","type":"address"},{"indexed":false,"name":"weiAmount","type":"uint256"}],"name":"Refunded","type":"event"}]
 
 class WagerForm  extends Component {
     constructor(props) {
@@ -16,30 +17,40 @@ class WagerForm  extends Component {
             amountOfEthWager: '',
             account0: '',
             account0Balance: 0,
-            ContractInstance: null
+            account0RefundBalance: 0,
+            account0InGame: false,
+            ContractInstance: null,
+            mainButtonClassName: 'w-button',
+            mainButtonLabel: '',
+            refundAvailable: false,
+            refundButtonLabel: '',
+            refundButtonClassName: 'w-button-blue',
+            handleMainButtonSubmit: this.handleJoinContest
         }
 
-        this.handleInputChange = this.handleInputChange.bind(this);
-        this.handleJoinContest = this.handleJoinContest.bind(this);
-        this.handleLeaveContest = this.handleLeaveContest.bind(this);
-        this.handleClaimRefund = this.handleClaimRefund.bind(this);
-        this.refreshBalance = this.refreshBalance.bind(this);
+        this.handleInputChange = this.handleInputChange.bind(this)
+        this.handleJoinContest = this.handleJoinContest.bind(this)
+        this.handleLeaveContest = this.handleLeaveContest.bind(this)
+        this.handleClaimRefund = this.handleClaimRefund.bind(this)
+        this.refreshBalance = this.refreshBalance.bind(this)
+        this.instantiateContract = this.instantiateContract.bind(this)
+        this.setJoinButton = this.setJoinButton.bind(this)
+        this.setLeaveButton = this.setLeaveButton.bind(this)
+        this.setJoiningButton = this.setJoiningButton.bind(this)
+        this.setLeavingButton = this.setLeavingButton.bind(this)
+        this.setRefundButton = this.setRefundButton.bind(this)
+        this.setRefundingButton = this.setRefundingButton.bind(this)
     }
 
     componentWillMount() {
         // Get network provider and web3 instance.
         // See utils/getWeb3 for more info.
 
-        getWeb3
-        .then(results => {
-            this.setState({
-                web3: results.web3
+        getWeb3.then((results) => {
+            return this.setState({ web3: results.web3 }, () => {
+                this.instantiateContract()
             })
-
-            // Instantiate contract once web3 provided.
-            this.instantiateContract()
-        })
-        .catch(() => {
+        }).catch(() => {
             alert('Error finding web3.')
         })
     }
@@ -68,6 +79,68 @@ class WagerForm  extends Component {
         })
     }
 
+    getIsInContest(contestantAddress) {
+        var thisObj = this;
+        this.state.ContractInstance.isInContest.call(contestantAddress, function (error, result) {
+            if (!error) {
+                console.log('getIsInContest: ' + result);
+                thisObj.setState({ account0InGame : result }, () => {
+                    thisObj.getRefundAmount(contestantAddress)
+                    if (result) {
+                        thisObj.setLeaveButton()
+                    } else {
+                        thisObj.setJoinButton()
+                    }
+                })
+            }
+        })
+    }
+
+    getRefundAmount(contestantAddress) {
+        var thisObj = this;
+        this.state.ContractInstance.deposited.call(contestantAddress, function(error, result){
+            console.log('getRefundAmount: ' + result);
+            thisObj.setState({ account0RefundBalance : result } , () => {
+                thisObj.setState({ refundAvailable : (result > 0 && !thisObj.state.account0InGame) })
+                thisObj.setRefundButton()
+            })
+        });
+    }
+
+    setJoinButton() {
+        this.setState({ handleMainButtonSubmit : this.handleJoinContest }, () => {
+            this.setState({ mainButtonClassName : 'w-button-green' })
+            this.setState({ mainButtonLabel : 'Join Contest' })
+        })
+    }
+
+    setLeaveButton() {
+        this.setState({ handleMainButtonSubmit : this.handleLeaveContest }, () => {
+            this.setState({ mainButtonClassName : 'w-button-orange' })
+            this.setState({ mainButtonLabel : 'Leave Contest' })
+        })
+    }
+
+    setJoiningButton() {
+        this.setState({ mainButtonClassName : 'w-button-yellow' })
+        this.setState({ mainButtonLabel : 'Joining ...' })
+    }
+
+    setLeavingButton() {
+        this.setState({ mainButtonClassName : 'w-button-yellow' })
+        this.setState({ mainButtonLabel : 'Leaving ...' })
+    }
+
+    setRefundingButton() {
+        this.setState({ refundButtonClassName : 'w-button-yellow' })
+        this.setState({ refundButtonLabel : 'Claiming Refund ' + this.state.web3.utils.fromWei(this.state.account0RefundBalance.toString(), 'ether') + ' ETH ...'})
+    }
+
+    setRefundButton() {
+        this.setState({ refundButtonClassName : 'w-button-blue' })
+        this.setState({ refundButtonLabel : 'Claim Refund of ' + this.state.web3.utils.fromWei(this.state.account0RefundBalance.toString(), 'ether') + ' ETH'})
+    }
+
     refreshBalance() {
         this.getBalance(this.state.account0).then((result) => {
             var balance = this.state.web3.utils.fromWei(result.toString(), 'ether')
@@ -76,24 +149,8 @@ class WagerForm  extends Component {
     }
 
     instantiateContract() {
-        /*
-         * SMART CONTRACT EXAMPLE
-         *
-         * Normally these functions would be called in the context of a
-         * state management library, but for convenience I've placed them here.
-         */
-
-        const ContestContract = window.web3.eth.contract([{"constant":true,"inputs":[{"name":"_contestant","type":"address"}],"name":"isInContest","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"joinContest","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"uint256"}],"name":"contestantsList","outputs":[{"name":"","type":"address"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"winnersCount","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"contestantsInfo","outputs":[{"name":"isInContest","type":"bool"},{"name":"initialBetAmount","type":"uint256"},{"name":"contestantIndex","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"startTime","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"winnerPercentage","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"claimRefund","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"leaveContest","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"deposited","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"inputs":[{"name":"_startTime","type":"uint256"},{"name":"_winnerPercentage","type":"uint256"}],"payable":true,"stateMutability":"payable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"name":"_contestant","type":"address"},{"indexed":false,"name":"_wagerAmount","type":"uint256"}],"name":"JoinContest","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"name":"_contestant","type":"address"}],"name":"LeaveContest","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"beneficiary","type":"address"},{"indexed":false,"name":"weiAmount","type":"uint256"}],"name":"Refunded","type":"event"}])
-        this.setState({ ContractInstance: ContestContract.at(CONTEST_CONTRACT_ADDRESS) })
-
-            /*
-        const contract = require('truffle-contract')
-        const simpleStorage = contract(SimpleStorageContract)
-        simpleStorage.setProvider(this.state.web3.currentProvider)
-    
-        // Declaring this for later so we can chain functions on SimpleStorage.
-        var simpleStorageInstance
-        */
+        const ContestContract = window.web3.eth.contract(CONTEST_ABI)
+        this.setState({ ContractInstance: ContestContract.at(CONTEST_CONTRACT_ADDRESS) }, () => {
 
         // Get accounts.
         this.state.web3.eth.getAccounts((error, accounts) => {
@@ -116,8 +173,9 @@ class WagerForm  extends Component {
                 if (error) {
                     alert('Error: ' + error)
                 } else {
-                    alert('Join game request confirmed!')
+                    console.log('Event JoinContest received')
                     thisObj.refreshBalance()
+                    thisObj.setLeaveButton();
                 }
             });
     
@@ -125,8 +183,10 @@ class WagerForm  extends Component {
                 if (error) {
                     alert('Error: ' + error)
                 } else {
-                    alert('Leave game request confirmed!')
+                    console.log('Event LeaveContest received')
                     thisObj.refreshBalance()
+                    thisObj.setJoinButton()
+                    thisObj.getRefundAmount(accounts[0])
                 }
             });
 
@@ -134,10 +194,13 @@ class WagerForm  extends Component {
                 if (error) {
                     alert('Error: ' + error)
                 } else {
-                    alert('Done refunded!')
+                    console.log('Event Refunded received')
                     thisObj.refreshBalance()
+                    thisObj.getRefundAmount(accounts[0])
                 }
             });
+
+            this.getIsInContest(accounts[0])
 
             /*
             simpleStorage.deployed().then((instance) => {
@@ -153,6 +216,7 @@ class WagerForm  extends Component {
                 return this.setState({ storageValue: result.c[0] })
             })
             */
+            })
         })
     }
 
@@ -168,7 +232,7 @@ class WagerForm  extends Component {
 
     handleJoinContest(event) {
         event.preventDefault();
-        if (this.state.amountOfEthWager == '')
+        if (this.state.amountOfEthWager === '')
         {
             alert('Please fill in Wager Amount')
             return
@@ -186,9 +250,10 @@ class WagerForm  extends Component {
             gas: 300000,
             from: this.state.account0,
             value: this.state.web3.utils.toWei(this.state.amountOfEthWager, 'ether')
-         }, (err, result) => {
-            alert('Joined game!!')
-         })
+        }, (err, result) => {
+            this.setJoiningButton()
+        })
+        this.setState({ refundAvailable : false })
     }
 
     handleLeaveContest(event) {
@@ -196,9 +261,10 @@ class WagerForm  extends Component {
         this.state.ContractInstance.leaveContest({
             gas: 300000,
             from: this.state.account0
-         }, (err, result) => {
-            alert('Left game!!')
-         })
+        }, (err, result) => {
+            this.getRefundAmount(this.state.account0)
+            this.setLeavingButton()
+        })
     }
 
     handleClaimRefund(event) {
@@ -206,43 +272,42 @@ class WagerForm  extends Component {
         this.state.ContractInstance.claimRefund({
             gas: 300000,
             from: this.state.account0
-         }, (err, result) => {
-            alert('Claimed Refund!!')
-         })
+        }, (err, result) => {
+            console.log('Claim Refund Pending ...')
+            this.setRefundingButton()
+        })
     }
 
     render() {
         return(
-            <div class="WagerForm">
-            <div class="timertext_div w-clearfix">
-                <div class="address_text">ADDRESS:</div>
+            <div className="WagerForm">
+            <div className="timertext_div w-clearfix">
+                <div className="address_text">ADDRESS:</div>
             </div>
-            <div class="timertext_div w-clearfix">
-                <div class="address">{this.state.account0}</div>
+            <div className="timertext_div w-clearfix">
+                <div className="address">{this.state.account0}</div>
             </div>
-            <div class="timertext_div w-clearfix">
-                <div class="address_text">BALANCE:</div>
+            <div className="timertext_div w-clearfix">
+                <div className="address_text">BALANCE:</div>
             </div>
-            <div class="timertext_div w-clearfix">
-                <div class="address">{this.state.account0Balance} ETH</div>
+            <div className="timertext_div w-clearfix">
+                <div className="address">{this.state.account0Balance} ETH</div>
             </div>
-            <form id="contest-form" name="contest-form" class="join-form" onSubmit={this.handleJoinContest}>
-                <label for="name">Username</label>
-                <input type="text" class="w-input" maxlength="256" name="username" placeholder="Enter username. For leaderboard display" id="username"
+            <form id="contest-form" name="contest-form" className="join-form" onSubmit={this.state.handleMainButtonSubmit}>
+                <label htmlFor="name">Username</label>
+                <input type="text" className="w-input" maxLength="256" name="username" placeholder="Enter username. For leaderboard display" id="username"
                     value={this.state.username}
                     onChange={this.handleInputChange} />
-                <label for="wager">Wager Amount</label>
-                <input type="number" class="w-input" maxlength="256" name="amountOfEthWager" id="ethwager" required=""
+                <label htmlFor="wager">Wager Amount</label>
+                <input type="number" className="w-input" maxLength="256" name="amountOfEthWager" id="ethwager" required=""
                     value={this.state.amountOfEthWager}
                     onChange={this.handleInputChange} />
-                <input type="submit" value="Join Contest" class="w-button" />
+                <input type="submit" value={this.state.mainButtonLabel} className={this.state.mainButtonClassName} />
             </form>
-            <form id="contest-leave-form" name="contest-leave-form" class="join-form" onSubmit={this.handleLeaveContest}>
-                <input type="submit" value="Leave Contest" class="w-button" />
-            </form>
-            <form id="contest-claim-refund-form" name="contest-claim-refund-form" class="join-form" onSubmit={this.handleClaimRefund}>
-                <input type="submit" value="Claim Refund" class="w-button" />
-            </form>
+            { this.state.refundAvailable ?
+                <form id="contest-claim-refund-form" name="contest-claim-refund-form" className="join-form" onSubmit={this.handleClaimRefund}>
+                    <input type="submit" value={this.state.refundButtonLabel} className={this.state.refundButtonClassName} />
+                </form> : null }
             </div>
         );
     }
@@ -261,19 +326,14 @@ class ContestInfoForm  extends Component {
         // Get network provider and web3 instance.
         // See utils/getWeb3 for more info.
 
-        getWeb3
-        .then(results => {
-            this.setState({
-                web3: results.web3
-            })
-
-            this.getContestPricePool().then((result) => {
-                
-                var balance = this.state.web3.utils.fromWei(result.toString(), 'ether')
-                this.setState({ contestPricePool: balance })
-            });
-        })
-        .catch(() => {
+        getWeb3.then((results) => {
+            return this.setState({ web3: results.web3 })
+        }).then((result) => {
+            return this.getContestPricePool()
+        }).then((result) => {
+            var balance = this.state.web3.utils.fromWei(result.toString(), 'ether')
+            return this.setState({ contestPricePool: balance })
+        }).catch(() => {
             alert('Error finding web3.')
         })
     }
@@ -293,7 +353,7 @@ class ContestInfoForm  extends Component {
 
     render() {
         return(
-            <div class="info_text">{this.state.contestPricePool} ETH</div>
+            <div className="info_text">{this.state.contestPricePool} ETH</div>
         );
     }
 }
@@ -302,81 +362,81 @@ class App extends Component {
     render() {
         return (
             <div>
-            <div data-w-id="ff392bad-c758-56a2-04d5-d7ccbf7aae89" class="overlay">
+            <div data-w-id="ff392bad-c758-56a2-04d5-d7ccbf7aae89" className="overlay">
             </div>
-            <div class="wrapper w-clearfix">
-                <div class="gamestatus_div w-clearfix">
-                <div class="status_container">
-                <div class="logo"></div>
-                    <div class="status_row w-row">
-                    <div class="status_column w-col w-col-4" data-ix="hover-status">
-                        <div class="status_box" data-ix="status-fade">
-                        <div class="counter">12</div>
+            <div className="wrapper w-clearfix">
+                <div className="gamestatus_div w-clearfix">
+                <div className="status_container">
+                <div className="logo"></div>
+                    <div className="status_row w-row">
+                    <div className="status_column w-col w-col-4" data-ix="hover-status">
+                        <div className="status_box" data-ix="status-fade">
+                        <div className="counter">12</div>
                         </div>
-                        <div class="status_text" data-ix="hover-status">Upcoming</div>
+                        <div className="status_text" data-ix="hover-status">Upcoming</div>
                     </div>
-                    <div class="status_column w-col w-col-4">
-                        <div class="status_box" data-ix="status-fade">
-                        <div class="counter">08</div>
+                    <div className="status_column w-col w-col-4">
+                        <div className="status_box" data-ix="status-fade">
+                        <div className="counter">08</div>
                         </div>
-                        <div class="status_text" data-ix="hover-status">In Progress</div>
+                        <div className="status_text" data-ix="hover-status">In Progress</div>
                     </div>
-                    <div class="status_column w-col w-col-4">
-                        <div class="status_box" data-ix="status-fade">
-                        <div class="counter">06</div>
+                    <div className="status_column w-col w-col-4">
+                        <div className="status_box" data-ix="status-fade">
+                        <div className="counter">06</div>
                         </div>
-                    <div class="status_text" data-ix="hover-status">Completed</div>
+                    <div className="status_text" data-ix="hover-status">Completed</div>
                     </div>
                 </div>
                 </div>
             </div>
-            <div class="contest_wrapper">
-                <div class="game_container w-clearfix">
-                <div class="game-header-div">
-                    <div class="game_header"><span class="contract-link"></span><span class="link_contract"></span> AGON PUBLIC CONTEST #0</div>
+            <div className="contest_wrapper">
+                <div className="game_container w-clearfix">
+                <div className="game-header-div">
+                    <div className="game_header"><span className="contract-link"></span><span className="link_contract"></span> AGON PUBLIC CONTEST #0</div>
                 </div>
-                <div class="game-info-div w-clearfix">
-                    <div class="game_row w-row">
-                    <div class="game_column w-col w-col-3">
-                        <div class="info_icon"></div>
-                        <div class="info">PLAYERS</div>
+                <div className="game-info-div w-clearfix">
+                    <div className="game_row w-row">
+                    <div className="game_column w-col w-col-3">
+                        <div className="info_icon"></div>
+                        <div className="info">PLAYERS</div>
                     </div>
-                    <div class="game_column w-col w-col-3">
-                        <div class="info_text">-----</div>
+                    <div className="game_column w-col w-col-3">
+                        <div className="info_text">-----</div>
                     </div>
-                    <div class="game_column w-col w-col-3">
-                        <div class="info_icon"></div>
-                        <div class="info">RULE</div>
+                    <div className="game_column w-col w-col-3">
+                        <div className="info_icon"></div>
+                        <div className="info">RULE</div>
                     </div>
-                    <div class="game_column w-col w-col-3">
-                        <div class="info_text">Top 50% Players</div>
+                    <div className="game_column w-col w-col-3">
+                        <div className="info_text">Top 50% Players</div>
                     </div>
                     </div>
-                    <div class="game_row w-row">
-                    <div class="game_column w-col w-col-3">
-                        <div class="info_icon"></div>
-                        <div class="info">PRIZE POOL</div>
+                    <div className="game_row w-row">
+                    <div className="game_column w-col w-col-3">
+                        <div className="info_icon"></div>
+                        <div className="info">PRIZE POOL</div>
                     </div>
-                    <div class="game_column w-col w-col-3">
+                    <div className="game_column w-col w-col-3">
                         <ContestInfoForm />
                     </div>
-                    <div class="game_column w-col w-col-3">
-                        <div class="info_icon"></div>
-                        <div class="info">DURATION</div>
+                    <div className="game_column w-col w-col-3">
+                        <div className="info_icon"></div>
+                        <div className="info">DURATION</div>
                     </div>
-                    <div class="game_column w-col w-col-3">
-                        <div class="info_text">72 Hours</div>
+                    <div className="game_column w-col w-col-3">
+                        <div className="info_text">72 Hours</div>
                     </div>
                     </div>
                 </div>
-                <div class="timer_div">
-                    <div class="timertext_div w-clearfix">
-                    <div class="timer_text">BETTING ENDS IN</div>
-                    <div class="time">13:05:23</div>
+                <div className="timer_div">
+                    <div className="timertext_div w-clearfix">
+                    <div className="timer_text">BETTING ENDS IN</div>
+                    <div className="time">13:05:23</div>
                     </div>
-                    <div class="timer_counter w-clearfix">
-                    <div class="time_past"></div>
-                    <div class="time_left"></div>
+                    <div className="timer_counter w-clearfix">
+                    <div className="time_past"></div>
+                    <div className="time_left"></div>
                     </div>
                 <WagerForm />
                 </div>
